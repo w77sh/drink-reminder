@@ -14,48 +14,76 @@ struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Text(primaryStatusLine)
+        VStack(alignment: .leading, spacing: 8) {
+            // Status Section
+            VStack(alignment: .leading) {
+                Label(primaryStatusLine, systemImage: "cup.and.saucer.fill")
+                    .font(.headline)
+                
+                if let secondaryStatusLine {
+                    Text(secondaryStatusLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                if let notificationStatusLine {
+                    Button(action: {
+                        reminderManager.openSystemNotificationSettings()
+                    }) {
+                        Label(notificationStatusLine, systemImage: "bell.badge.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
-        if let secondaryStatusLine {
-            Text(secondaryStatusLine)
-        }
+            Divider()
 
-        if let notificationStatusLine {
-            Button(notificationStatusLine) {
-                reminderManager.openSystemNotificationSettings()
+            // Actions Section
+            VStack(alignment: .leading, spacing: 4) {
+                Button(action: {
+                    reminderManager.drinkNow()
+                }) {
+                    Label("Drink now", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(reminderManager.state.isPausedToday)
+
+                Button(action: {
+                    reminderManager.snooze30Minutes()
+                }) {
+                    Label("Snooze 30 minutes", systemImage: "powersleep")
+                }
+                .buttonStyle(.plain)
+                .disabled(reminderManager.state.isPausedToday)
+
+                Button(action: reminderAction) {
+                    Label(reminderActionTitle, systemImage: reminderManager.state.isPausedToday ? "play.circle.fill" : "pause.circle.fill")
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider()
+
+            // App Management Section
+            Button(action: {
+                openSettings()
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }) {
+                Label("Settings", systemImage: "gearshape.fill")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+
+            Divider()
+
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                Label("Quit", systemImage: "power.circle.fill")
+            }
+            .buttonStyle(.plain)
         }
-
-        Divider()
-
-        Button("Drink now") {
-            reminderManager.drinkNow()
-        }
-        .disabled(reminderManager.state.isPausedToday)
-
-        Button("Snooze 30 minutes") {
-            reminderManager.snooze30Minutes()
-        }
-        .disabled(reminderManager.state.isPausedToday)
-
-        Button(reminderActionTitle) {
-            reminderAction()
-        }
-
-        Divider()
-
-        Button("Settings") {
-            openSettings()
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-
-        Divider()
-
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
-        }
+        .padding(12)
     }
 
     private var primaryStatusLine: String {

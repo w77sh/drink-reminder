@@ -99,10 +99,7 @@ final class ReminderManager {
     }
 
     func snooze30Minutes(now: Date) {
-        let snoozedUntil = TimeUtils.date(byAddingMinutes: 30, to: now, calendar: calendar)
-        state.lastProcessedDay = TimeUtils.startOfDay(for: now, calendar: calendar)
-        state.snoozedUntil = snoozedUntil
-        state.nextReminderTime = snoozedUntil
+        state.snoozedUntil = now.addingTimeInterval(30 * 60)
         recalculateNextReminder(now: now)
     }
 
@@ -148,6 +145,16 @@ final class ReminderManager {
         }
 
         return .valid
+    }
+
+    func update(settings: AppSettings) {
+        self.settings = settings
+        settingsStore.save(settings)
+        recalculateNextReminder(now: Date())
+    }
+
+    func pauseOrResume() {
+        pauseOrResume(now: Date())
     }
 
     var isOutsideReminderWindow: Bool {

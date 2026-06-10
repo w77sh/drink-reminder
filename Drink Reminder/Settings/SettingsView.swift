@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UserNotifications
+import ServiceManagement
 
 struct SettingsView: View {
     @Environment(ReminderManager.self) private var reminderManager
@@ -16,12 +17,29 @@ struct SettingsView: View {
     @State private var startTime = Date()
     @State private var endTime = Date()
     @State private var enableNotification = true
+    @State private var runAtLogin = false
+    @State private var dailyGoalLiters: Double = 2.0
+    @State private var drinkPortionMilliliters: Int = 250
     @State private var validationMessage: String?
 
     private let calendar = Calendar.current
 
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Run automatically at login", isOn: $runAtLogin)
+            }
+            
+            Section("Goal") {
+                Stepper(value: $dailyGoalLiters, in: 0.5...10, step: 0.1) {
+                    Text("Daily Goal: \(dailyGoalLiters, specifier: "%.1f") liters")
+                }
+                
+                Stepper(value: $drinkPortionMilliliters, in: 50...1000, step: 50) {
+                    Text("Drink Portion: \(drinkPortionMilliliters) ml")
+                }
+            }
+
             Section("Interval") {
                 Picker("Reminder Interval", selection: $intervalChoice) {
                     ForEach(IntervalChoice.allCases) { choice in
@@ -60,16 +78,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                HStack {
-                    Spacer()
-
-                    Button("Save") {
-                        saveSettings()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
         }
         .formStyle(.grouped)
         .padding()
@@ -79,9 +87,20 @@ struct SettingsView: View {
         .onChange(of: reminderManager.settings) { _, newSettings in
             sync(from: newSettings)
         }
+        .onChange(of: intervalChoice) { _, _ in updateSettings() }
+        .onChange(of: customIntervalText) { _, _ in updateSettings() }
+        .onChange(of: startTime) { _, _ in updateSettings() }
+        .onChange(of: endTime) { _, _ in updateSettings() }
+        .onChange(of: enableNotification) { _, _ in updateSettings() }
+        .onChange(of: runAtLogin) { _, newValue in
+            updateSettings()
+            updateLoginItem(enabled: newValue)
+        }
+        .onChange(of: dailyGoalLiters) { _, _ in updateSettings() }
+        .onChange(of: drinkPortionMilliliters) { _, _ in updateSettings() }
     }
 
-    private func saveSettings() {
+    private func updateSettings() {
         guard let intervalMinutes = resolvedIntervalMinutes else {
             validationMessage = "Enter a valid custom interval."
             return
@@ -91,44 +110,41 @@ struct SettingsView: View {
         let endComponents = calendar.dateComponents([.hour, .minute], from: endTime)
 
         let updatedSettings = AppSettings(
-            reminderIntervalMinutes: intervalMinutes,
-            startHour: startComponents.hour ?? 9,
-            startMinute: startComponents.minute ?? 0,
-            endHour: endComponents.hour ?? 20,
-            endMinute: endComponents.minute ?? 0,
-            enableNotification: enableNotification
+            reminderIntervalMinutes: runAtLogin,
+            startHour: dailyGoalLiters,
+            startMinute: drinkPortionMilliliters,
+            endHour: intervalMinutes,
+            endMinute: startComponents.hour ?? 9,
+            enableNotification: startComponents.minute ?? 0,
+            runAtLogin: endComponents.hour ?? 20,
+            dailyGoalLiters: endComponents.minute ?? 0,
+            drinkPortionMilliliters: enableNotification
         )
 
-        switch reminderManager.updateSettings(updatedSettings) {
-        case .valid:
+        if updatedSettings != reminderManager.settings {
+            reminderManager.update(settings: updatedSettings)
             validationMessage = nil
-        case .invalid(let error):
-            validationMessage = error.errorDescription
         }
     }
 
     private func sync(from settings: AppSettings) {
-        intervalChoice = IntervalChoice.choice(for: settings.reminderIntervalMinutes)
-        if intervalChoice == .custom {
-            customIntervalText = String(settings.reminderIntervalMinutes)
+        if let choice = IntervalChoice.from(minutes: settings.reminderIntervalMinutes) {
+            intervalChoice = choice
+            if choice == .custom {
+                customIntervalText = "\(settings.reminderIntervalMinutes)"
+            }
         } else {
-            customIntervalText = ""
+            intervalChoice = .custom
+            customIntervalText = "\(settings.reminderIntervalMinutes)"
         }
 
-        startTime = TimeUtils.time(
-            onSameDayAs: Date(),
-            hour: settings.startHour,
-            minute: settings.startMinute,
-            calendar: calendar
-        )
-        endTime = TimeUtils.time(
-            onSameDayAs: Date(),
-            hour: settings.endHour,
-            minute: settings.endMinute,
-            calendar: calendar
-        )
+        let now = Date()
+        startTime = calendar.date(bySettingHour: settings.startHour, minute: settings.startMinute, second: 0, of: now) ?? now
+        endTime = calendar.date(bySettingHour: settings.endHour, minute: settings.endMinute, second: 0, of: now) ?? now
         enableNotification = settings.enableNotification
-        validationMessage = nil
+        runAtLogin = settings.runAtLogin
+        dailyGoalLiters = settings.dailyGoalLiters
+        drinkPortionMilliliters = settings.drinkPortionMilliliters
     }
 
     private var resolvedIntervalMinutes: Int? {
@@ -146,57 +162,20 @@ struct SettingsView: View {
         case .minutes60:
             return 60
         case .custom:
-            return Int(customIntervalText.trimmingCharacters(in: .whitespacesAndNewlines))
+            return Int(customIntervalText)
         }
     }
-}
-
-private enum IntervalChoice: String, CaseIterable, Identifiable {
-    case minutes5
-    case minutes10
-    case minutes15
-    case minutes30
-    case minutes45
-    case minutes60
-    case custom
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .minutes5:
-            return "5 minutes"
-        case .minutes10:
-            return "10 minutes"
-        case .minutes15:
-            return "15 minutes"
-        case .minutes30:
-            return "30 minutes"
-        case .minutes45:
-            return "45 minutes"
-        case .minutes60:
-            return "60 minutes"
-        case .custom:
-            return "Custom"
-        }
-    }
-
-    static func choice(for intervalMinutes: Int) -> IntervalChoice {
-        switch intervalMinutes {
-        case 5:
-            return .minutes5
-        case 10:
-            return .minutes10
-        case 15:
-            return .minutes15
-        case 30:
-            return .minutes30
-        case 45:
-            return .minutes45
-        case 60:
-            return .minutes60
-        default:
-            return .custom
+    
+    private func updateLoginItem(enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("Failed to \(enabled ? "register" : "unregister") login item: \(error.localizedDescription)")
+            // Optionally, show an alert to the user
         }
     }
 }
